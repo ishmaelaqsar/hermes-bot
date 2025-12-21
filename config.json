@@ -1,0 +1,97 @@
+{
+    "emails": [],
+    "ignore_list": [
+        "strap",
+        "charms"
+    ],
+    "min_interval_minutes": 10,
+    "max_interval_minutes": 20,
+    "last_run_time": "2025-12-20 16:10:45",
+    "last_run_status": "Waiting (Last found: 14)",
+    "found_items": [
+        {
+            "name": "P'tit Arcon Toile & Cuir bag , :  Beige/Natural ,  \u00a33,790...",
+            "full_text": "P'tit Arcon Toile & Cuir bag , :  Beige/Natural ,  \u00a33,790",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/p-tit-arcon-toile-and-cuir-bag-H086394CKAB/"
+        },
+        {
+            "name": "P'tit Arcon Toile & Cuir bag , :  Beige/Natural ,  \u00a33,790...",
+            "full_text": "P'tit Arcon Toile & Cuir bag , :  Beige/Natural ,  \u00a33,790",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/p-tit-arcon-toile-and-cuir-bag-H086394CKAB/"
+        },
+        {
+            "name": "En Piste clutch , :  Red ,  \u00a35,160...",
+            "full_text": "En Piste clutch , :  Red ,  \u00a35,160",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/en-piste-clutch-H084948CP0G/"
+        },
+        {
+            "name": "En Piste clutch , :  Red ,  \u00a35,160...",
+            "full_text": "En Piste clutch , :  Red ,  \u00a35,160",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/en-piste-clutch-H084948CP0G/"
+        },
+        {
+            "name": "Petite Course stitch bag , :  Grey ,  \u00a33,850...",
+            "full_text": "Petite Course stitch bag , :  Grey ,  \u00a33,850",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/petite-course-stitch-bag-H087081CKP0/"
+        },
+        {
+            "name": "Petite Course stitch bag , :  Grey ,  \u00a33,850...",
+            "full_text": "Petite Course stitch bag , :  Grey ,  \u00a33,850",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/petite-course-stitch-bag-H087081CKP0/"
+        },
+        {
+            "name": "Arcon slim bag , :  Black ,  \u00a33,940...",
+            "full_text": "Arcon slim bag , :  Black ,  \u00a33,940",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/arcon-slim-bag-H087032CPAD/"
+        },
+        {
+            "name": "Arcon slim bag , :  Black ,  \u00a33,940...",
+            "full_text": "Arcon slim bag , :  Black ,  \u00a33,940",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/arcon-slim-bag-H087032CPAD/"
+        },
+        {
+            "name": "Herm\u00e8s Della Cavalleria mini bag II , :  Grey ,  \u00a35,020...",
+            "full_text": "Herm\u00e8s Della Cavalleria mini bag II , :  Grey ,  \u00a35,020",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/hermes-della-cavalleria-mini-bag-ii-H085367CP85/"
+        },
+        {
+            "name": "Herm\u00e8s Della Cavalleria mini bag II , :  Grey ,  \u00a35,020...",
+            "full_text": "Herm\u00e8s Della Cavalleria mini bag II , :  Grey ,  \u00a35,020",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/hermes-della-cavalleria-mini-bag-ii-H085367CP85/"
+        },
+        {
+            "name": "Collier d'Attelage bag , :  White ,  \u00a38,480...",
+            "full_text": "Collier d'Attelage bag , :  White ,  \u00a38,480",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/collier-d-attelage-bag-H086342CK10/"
+        },
+        {
+            "name": "Collier d'Attelage bag , :  White ,  \u00a38,480...",
+            "full_text": "Collier d'Attelage bag , :  White ,  \u00a38,480",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/collier-d-attelage-bag-H086342CK10/"
+        },
+        {
+            "name": "Steeple 28 bag , :  Multi-colored ,  \u00a33,850...",
+            "full_text": "Steeple 28 bag , :  Multi-colored ,  \u00a33,850",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/steeple-28-bag-H083610CKAD/"
+        },
+        {
+            "name": "Steeple 28 bag , :  Multi-colored ,  \u00a33,850...",
+            "full_text": "Steeple 28 bag , :  Multi-colored ,  \u00a33,850",
+            "price": "Check Link",
+            "link": "https://www.hermes.com/uk/en/product/steeple-28-bag-H083610CKAD/"
+        }
+    ]
+}
