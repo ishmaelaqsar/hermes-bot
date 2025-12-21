@@ -4,9 +4,9 @@
         "strap",
         "charms"
     ],
-    "min_interval_minutes": 10,
-    "max_interval_minutes": 20,
-    "last_run_time": "2025-12-20 16:10:45",
-    "last_run_status": "Waiting (Last found: 14)",
+    "min_interval_minutes": 20,
+    "max_interval_minutes": 40,
+    "last_run_time": "",
+    "last_run_status": "",
     "found_items": []
 }

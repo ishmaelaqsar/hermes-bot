@@ -47,8 +47,8 @@ def background_worker():
             send_html_email(found, config['emails'])
 
         # 5. Wait random time
-        min_min = int(config.get('min_interval_minutes', 10))
-        max_min = int(config.get('max_interval_minutes', 20))
+        min_min = int(config.get('min_interval_minutes', 20))
+        max_min = int(config.get('max_interval_minutes', 40))
         wait_seconds = random.randint(min_min * 60, max_min * 60)
         print(f"Waiting {wait_seconds}s until next run...")
         time.sleep(wait_seconds)
