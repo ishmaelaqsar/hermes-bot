@@ -33,9 +33,11 @@ def create_driver():
 def send_html_email(items, recipients):
     if not recipients: return
 
+    email = os.environ.get("GMAIL_ADDRESS")
+
     msg = EmailMessage()
     msg["Subject"] = f"HERMES ALERT: {len(items)} Items Available"
-    msg["From"] = "ishmaelaqsar@gmail.com"
+    msg["From"] = email
     msg["To"] = ", ".join(recipients)
 
     # HTML Email with Images
@@ -57,7 +59,7 @@ def send_html_email(items, recipients):
     try:
         password = os.environ.get("GMAIL_APP_PASSWORD")
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login("ishmaelaqsar@gmail.com", password)
+            server.login(email, password)
             server.send_message(msg)
     except Exception as e:
         print(f"Email Error: {e}")
