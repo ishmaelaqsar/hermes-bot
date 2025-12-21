@@ -8,50 +8,63 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException
+from webdriver_manager.chrome import ChromeDriverManager
 
 
-# Specific URL for Hermes UK Bags
+# Hermes UK Bags URL
 URL = "https://www.hermes.com/uk/en/category/women/bags-and-small-leather-goods/bags-and-clutches/#fh_view_size=48&country=uk&fh_refpath=84b794f4-a6bd-48ff-9f38-c1a7b60d5a50&fh_refview=lister&fh_reffacet=display_state_uk&fh_location=%2f%2fcatalog01%2fen_US%2fis_visible%3e%7buk%7d%2fis_searchable%3e%7buk%7d%2fis_sellable%3e%7buk%7d%2fhas_stock%3e%7buk%7d%2fitem_type%3dproduct%2fcategories%3c%7bcatalog01_women_womenbagssmallleathergoods_womenbagsbagsclutches%7d%2fobject_type_filter%3e%7bsacs_a_main%3bsacs_bandouliere%3bcabas%3bpochettes%7d%2fdisplay_state_uk%3e%7becom%3becom_display%3bdisplay%7d|"
 
 
-def create_driver():
+def create_driver(proxy=None):
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument(f"--user-data-dir={os.getcwd()}/chrome_profile")
-    options.binary_location = "/usr/bin/chromium"
-
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     options.add_argument("--window-size=1920,1080")
 
-    service = Service("/usr/bin/chromedriver")
+    # Block images to save data (User Request)
+    prefs = {
+        "profile.managed_default_content_settings.images": 2,
+        "profile.default_content_setting_values.images": 2
+    }
+    options.add_experimental_option("prefs", prefs)
+    # -----------------------
+
+    # Stealth settings
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+    # --- PROXY CONFIGURATION ---
+    if proxy and proxy.strip():
+        print(f"Using Proxy: {proxy}")
+        options.add_argument(f'--proxy-server={proxy}')
+    # ---------------------------
+
+    service = Service(ChromeDriverManager().install())
     return webdriver.Chrome(service=service, options=options)
 
 
 def send_html_email(items, recipients):
     if not recipients: return
 
-    email = os.environ.get("GMAIL_ADDRESS")
+    sender_email = os.environ.get("GMAIL_ADDRESS")
 
     msg = EmailMessage()
     msg["Subject"] = f"HERMES ALERT: {len(items)} Items Available"
-    msg["From"] = email
+    msg["From"] = sender_email
     msg["To"] = ", ".join(recipients)
 
-    # HTML Email with Images
-    html_content = "<h2>Hermes Stock Alert</h2>"
+    # Simplified HTML Email (Text Links Only)
+    html_content = "<h2>Hermes Stock Alert</h2><ul>"
     for item in items:
         html_content += f"""
-        <div style="border:1px solid #ddd; padding:10px; margin-bottom:10px;">
-            <img src="{item['image']}" width="100" style="float:left; margin-right:10px;">
-            <p><b>{item['name']}</b></p>
-            <p>Price: {item['price']}</p>
-            <p><a href="{item['link']}">Buy Now</a></p>
-            <div style="clear:both;"></div>
-        </div>
+        <li style="margin-bottom: 15px;">
+            <b>{item['name']}</b><br>
+            Price: {item['price']}<br>
+            <a href="{item['link']}">Buy Now</a>
+        </li>
         """
+    html_content += "</ul>"
 
     msg.set_content("Please enable HTML emails to view links.")
     msg.add_alternative(html_content, subtype='html')
@@ -59,18 +72,18 @@ def send_html_email(items, recipients):
     try:
         password = os.environ.get("GMAIL_APP_PASSWORD")
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(email, password)
+            server.login(sender_email, password)
             server.send_message(msg)
     except Exception as e:
         print(f"Email Error: {e}")
 
 
-def run_check(ignore_list):
+def run_check(ignore_list, proxy=None):
     driver = None
     found_items = []
 
     try:
-        driver = create_driver()
+        driver = create_driver(proxy)
         driver.get(URL)
         wait = WebDriverWait(driver, 30)
         wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'product-item')] | //body")))
@@ -96,28 +109,13 @@ def run_check(ignore_list):
                 except:
                     link = URL
 
-                # Get Image URL (New Logic)
-                try:
-                    # Look for the first image tag inside the product card
-                    img_elem = product.find_element(By.TAG_NAME, "img")
-                    image_url = img_elem.get_attribute("src")
-
-                    # Sometimes src is lazy-loaded, check 'data-src' if needed
-                    if not image_url or "base64" in image_url:
-                        image_url = img_elem.get_attribute("data-src")
-
-                    # Fix relative URLs if any
-                    if image_url and image_url.startswith("//"):
-                        image_url = "https:" + image_url
-                except:
-                    image_url = "https://via.placeholder.com/150?text=No+Image"
+                # Note: Image scraping removed to save complexity/bandwidth
 
                 found_items.append({
                     "name": text[:60] + "...",
                     "full_text": text,
                     "price": "Check Link",
-                    "link": link,
-                    "image": image_url  # Add to data dictionary
+                    "link": link
                 })
 
             except StaleElementReferenceException:
@@ -125,6 +123,8 @@ def run_check(ignore_list):
 
     except Exception as e:
         print(f"Scrape Error: {e}")
+        # Re-raise exception so app.py knows it failed
+        raise e
     finally:
         if driver: driver.quit()
 

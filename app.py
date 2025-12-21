@@ -11,10 +11,12 @@ app = Flask(__name__)
 CONFIG_FILE = 'config.json'
 
 
-# --- Load/Save Config Helpers ---
 def load_config():
-    with open(CONFIG_FILE, 'r') as f:
-        return json.load(f)
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"emails": [], "ignore_list": [], "min_interval_minutes": 10, "max_interval_minutes": 20, "proxy": ""}
 
 
 def save_config(data):
@@ -22,44 +24,49 @@ def save_config(data):
         json.dump(data, f, indent=4)
 
 
-# --- Background Worker ---
 def background_worker():
     while True:
         config = load_config()
 
-        # 1. Update status
-        config['last_run_status'] = "Running..."
-        save_config(config)
+        try:
+            # 1. Update status
+            config['last_run_status'] = "Running..."
+            save_config(config)
 
-        # 2. Run the Scraper
-        found = run_check(config['ignore_list'])
+            # 2. Run the Scraper (Pass Proxy!)
+            found = run_check(config['ignore_list'], config.get('proxy'))
 
-        # 3. Handle Results
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        config = load_config() # Reload in case user changed settings while running
-        config['last_run_time'] = timestamp
-        config['found_items'] = found
-        config['last_run_status'] = f"Waiting (Last found: {len(found)})"
-        save_config(config)
+            # 3. Handle Success
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            config = load_config()
+            config['last_run_time'] = timestamp
+            config['found_items'] = found
+            config['last_run_status'] = f"Waiting (Last found: {len(found)})"
+            save_config(config)
 
-        # 4. Send Email if items found
-        if found:
-            send_html_email(found, config['emails'])
+            if found:
+                send_html_email(found, config['emails'])
 
-        # 5. Wait random time
-        min_min = int(config.get('min_interval_minutes', 20))
-        max_min = int(config.get('max_interval_minutes', 40))
+        except Exception as e:
+            # 4. Handle Errors (So you see them in dashboard)
+            print(f"Worker Error: {e}")
+            config = load_config()
+            config['last_run_status'] = f"Error: {str(e)[:50]}..."
+            save_config(config)
+
+        # 5. Wait
+        min_min = int(config.get('min_interval_minutes', 10))
+        max_min = int(config.get('max_interval_minutes', 20))
         wait_seconds = random.randint(min_min * 60, max_min * 60)
         print(f"Waiting {wait_seconds}s until next run...")
         time.sleep(wait_seconds)
 
 
-# Start background thread immediately
+# Start background thread
 thread = threading.Thread(target=background_worker, daemon=True)
 thread.start()
 
 
-# --- Web Routes ---
 @app.route('/')
 def index():
     config = load_config()
@@ -70,13 +77,14 @@ def index():
 def update_settings():
     config = load_config()
 
-    # Update Timing
     config['min_interval_minutes'] = int(request.form.get('min_time'))
     config['max_interval_minutes'] = int(request.form.get('max_time'))
 
-    # Update Emails (Comma separated)
     emails_raw = request.form.get('emails')
     config['emails'] = [e.strip() for e in emails_raw.split(',') if e.strip()]
+
+    # Save Proxy
+    config['proxy'] = request.form.get('proxy', '').strip()
 
     save_config(config)
     return redirect(url_for('index'))
@@ -102,5 +110,4 @@ def remove_ignore(word):
 
 
 if __name__ == '__main__':
-    # Host 0.0.0.0 allows access from other computers on network
     app.run(host='0.0.0.0', port=5000, debug=False)
