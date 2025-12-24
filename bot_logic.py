@@ -12,8 +12,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 
 # Hermes UK Bags URL
-URL = "https://www.hermes.com/uk/en/category/women/bags-and-small-leather-goods/bags-and-clutches/#fh_view_size=48&country=uk&fh_refpath=84b794f4-a6bd-48ff-9f38-c1a7b60d5a50&fh_refview=lister&fh_reffacet=display_state_uk&fh_location=%2f%2fcatalog01%2fen_US%2fis_visible%3e%7buk%7d%2fis_searchable%3e%7buk%7d%2fis_sellable%3e%7buk%7d%2fhas_stock%3e%7buk%7d%2fitem_type%3dproduct%2fcategories%3c%7bcatalog01_women_womenbagssmallleathergoods_womenbagsbagsclutches%7d%2fobject_type_filter%3e%7bsacs_a_main%3bsacs_bandouliere%3bcabas%3bpochettes%7d%2fdisplay_state_uk%3e%7becom%3becom_display%3bdisplay%7d|"
-
+URL = "https://www.hermes.com/uk/en/category/women/bags-and-small-leather-goods/bags-and-clutches/#fh_view_size=48&country=uk&fh_refpath=5134e23c-83df-4ccc-9c1e-58e00f7e4bfd&fh_refview=lister&fh_reffacet=object_type_filter&fh_location=%2f%2fcatalog01%2fen_US%2fis_visible%3e%7buk%7d%2fis_searchable%3e%7buk%7d%2fis_sellable%3e%7buk%7d%2fhas_stock%3e%7buk%7d%2fitem_type%3dproduct%2fcategories%3c%7bcatalog01_women_womenbagssmallleathergoods_womenbagsbagsclutches%7d%2fdisplay_state_uk%3e%7becom%3becom_display%7d%2fobject_type_filter%3e%7bsacs_bandouliere%3bpochettes%7d|"
 
 def create_driver(proxy=None):
     options = Options()
