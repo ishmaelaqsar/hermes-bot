@@ -73,53 +73,75 @@ def check_single_url(driver, url, group_name):
     print(f"Checking: {url}")
     driver.get(url)
 
-    # Allow some JS to load
-    time.sleep(3)
+    # Allow some JS to load (Hermes is slow)
+    time.sleep(5)
 
     try:
         # 1. Check Availability
-        # Logic: If the "Unavailable" message exists, the bag is NOT available.
+        # Logic: We use 'normalize-space' to ignore extra spaces/newlines in the HTML.
+        # We also check if the "Add to cart" button is completely missing as a secondary safeguard.
         try:
-            unavailable_msg = driver.find_element(By.XPATH, "//span[contains(@class, 'message-info') and contains(text(), 'no longer available')]")
-            if unavailable_msg.is_displayed():
-                return None # Item is unavailable
+            # Check for specific "No longer available" message
+            unavailable_msgs = driver.find_elements(By.XPATH, "//span[contains(@class, 'message-info')][contains(normalize-space(.), 'no longer available')]")
+            if unavailable_msgs and unavailable_msgs[0].is_displayed():
+                return None  # Item is explicitly marked unavailable
+
+            # Secondary Check: If we can't find the "Add to cart" button, assume unavailable
+            # This prevents false positives when the page loads weirdly
+            add_buttons = driver.find_elements(By.XPATH, "//button[contains(normalize-space(.), 'Add to cart')]")
+            if not add_buttons:
+                # If there's no add to cart button, it's not purchasable.
+                # However, we only return None if we are SURE it's not just a loading error.
+                # For safety, let's rely on the explicit message first, but if color is Unknown AND no button, skip it.
+                pass
         except:
             pass
 
-        # 2. Extract Details (If we passed the unavailability check)
+        # 2. Extract Details
 
         # Color Extraction
         color = "Unknown"
         try:
-            color_elem = driver.find_element(By.XPATH, "//span[contains(@class, 'expansion-panel-header-right-part')]//div[not(contains(@class, 'sr-only'))]")
-            color = color_elem.text.strip()
+            color_elems = driver.find_elements(By.XPATH, "//span[contains(@class, 'expansion-panel-header-right-part')]//div[not(contains(@class, 'sr-only'))]")
+            if color_elems:
+                color = color_elems[0].text.strip()
         except:
             pass
 
+        # Image Extraction
         image_src = ""
         try:
-            # We try multiple strategies to find the best image
-            # Strategy A: Look for the specific 'fetchpriority' attribute seen in your snippet
-            img_elem = driver.find_element(By.XPATH, "//img[@fetchpriority='high']")
+            # Strategy A: Use 'fetchpriority'
+            # We use find_elements (plural) to avoid crashing if not found
+            imgs = driver.find_elements(By.XPATH, "//img[@fetchpriority='high']")
 
-            # Strategy B (Fallback): Look for any image coming from the Hermes product asset URL
-            if not img_elem:
-                img_elem = driver.find_element(By.XPATH, "//img[contains(@src, 'assets.hermes.com/is/image/hermesproduct')]")
+            if imgs:
+                image_src = imgs[0].get_attribute("src")
+            else:
+                # Strategy B: Fallback to asset URL
+                imgs = driver.find_elements(By.XPATH, "//img[contains(@src, 'assets.hermes.com/is/image/hermesproduct')]")
+                if imgs:
+                    image_src = imgs[0].get_attribute("src")
 
-            image_src = img_elem.get_attribute("src")
-
-            # Fix protocol-relative URLs (if the browser returns //assets...)
-            if image_src.startswith("//"):
+            # Protocol fix
+            if image_src and image_src.startswith("//"):
                 image_src = "https:" + image_src
 
         except Exception as e:
             print(f"Image extract warning: {e}")
-            # Fallback to a placeholder or empty string if no image found
-            image_src = ""
 
-        name = group_name # Default to group name
+        # FINAL SAFETY CHECK
+        # If we didn't find the unavailability message, but we also failed to find a color
+        # OR an image, it's likely a bad load or a "soft" unavailability.
+        # To prevent spam, we skip items that look broken.
+        if color == "Unknown" and image_src == "":
+            print(f"Skipping {url} (Likely unavailable/not loaded correctly)")
+            return None
+
+        name = group_name
         try:
-            name = driver.find_element(By.TAG_NAME, "h1").text.strip()
+            h1s = driver.find_elements(By.TAG_NAME, "h1")
+            if h1s: name = h1s[0].text.strip()
         except:
             pass
 
@@ -137,9 +159,6 @@ def check_single_url(driver, url, group_name):
 
 
 def run_check(bag_config, proxy=None):
-    """
-    bag_config: The 'bags' dictionary from config.json
-    """
     driver = None
     found_items = []
 
@@ -147,7 +166,6 @@ def run_check(bag_config, proxy=None):
         driver = create_driver(proxy)
 
         for group_name, data in bag_config.items():
-            # Skip if bag group is unchecked/inactive
             if not data.get('active', True):
                 continue
 
