@@ -10,6 +10,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
+
 def create_driver(proxy=None):
     options = Options()
     options.add_argument("--headless=new")
@@ -26,6 +27,7 @@ def create_driver(proxy=None):
 
     service = Service(ChromeDriverManager().install())
     return webdriver.Chrome(service=service, options=options)
+
 
 def send_html_email(items, recipients):
     if not recipients: return
@@ -58,9 +60,11 @@ def send_html_email(items, recipients):
     msg.add_alternative(html_content, subtype='html')
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+            server.starttls()
             server.login(sender_email, password)
             server.send_message(msg)
+            print("Email sent successfully!")
     except Exception as e:
         print(f"Email Error: {e}")
 
