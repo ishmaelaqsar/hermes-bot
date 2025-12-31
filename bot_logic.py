@@ -18,6 +18,11 @@ def create_driver(proxy=None):
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
 
+    # This block tells Chrome NOT to download images
+    prefs = {"profile.managed_default_content_settings.images": 2}
+    options.add_experimental_option("prefs", prefs)
+    # -----------------------
+
     # Stealth settings
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
