@@ -14,9 +14,19 @@ CONFIG_FILE = 'config.json'
 def load_config():
     try:
         with open(CONFIG_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            # Ensure new structure exists if migrating from old config
+            if "bags" not in data:
+                data["bags"] = {}
+            return data
     except FileNotFoundError:
-        return {"emails": [], "ignore_list": [], "min_interval_minutes": 10, "max_interval_minutes": 20, "proxy": ""}
+        return {
+            "bags": {},
+            "emails": [],
+            "min_interval_minutes": 10,
+            "max_interval_minutes": 20,
+            "proxy": ""
+        }
 
 
 def save_config(data):
@@ -33,8 +43,9 @@ def background_worker():
             config['last_run_status'] = "Running..."
             save_config(config)
 
-            # 2. Run the Scraper (Pass Proxy!)
-            found = run_check(config['ignore_list'], config.get('proxy'))
+            # 2. Run the Scraper
+            # Pass the entire 'bags' dict logic
+            found = run_check(config.get('bags', {}), config.get('proxy'))
 
             # 3. Handle Success
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -48,7 +59,6 @@ def background_worker():
                 send_html_email(found, config['emails'])
 
         except Exception as e:
-            # 4. Handle Errors (So you see them in dashboard)
             print(f"Worker Error: {e}")
             config = load_config()
             config['last_run_status'] = f"Error: {str(e)[:50]}..."
@@ -58,11 +68,9 @@ def background_worker():
         min_min = int(config.get('min_interval_minutes', 10))
         max_min = int(config.get('max_interval_minutes', 20))
         wait_seconds = random.randint(min_min * 60, max_min * 60)
-        print(f"Waiting {wait_seconds}s until next run...")
         time.sleep(wait_seconds)
 
 
-# Start background thread
 thread = threading.Thread(target=background_worker, daemon=True)
 thread.start()
 
@@ -76,36 +84,91 @@ def index():
 @app.route('/update_settings', methods=['POST'])
 def update_settings():
     config = load_config()
-
     config['min_interval_minutes'] = int(request.form.get('min_time'))
     config['max_interval_minutes'] = int(request.form.get('max_time'))
-
     emails_raw = request.form.get('emails')
     config['emails'] = [e.strip() for e in emails_raw.split(',') if e.strip()]
-
-    # Save Proxy
     config['proxy'] = request.form.get('proxy', '').strip()
-
     save_config(config)
     return redirect(url_for('index'))
 
 
-@app.route('/add_ignore', methods=['POST'])
-def add_ignore():
+@app.route('/add_bag_group', methods=['POST'])
+def add_bag_group():
     config = load_config()
-    word = request.form.get('ignore_word')
-    if word and word not in config['ignore_list']:
-        config['ignore_list'].append(word)
+    name = request.form.get('bag_name').strip()
+    if name and name not in config['bags']:
+        config['bags'][name] = {"active": True, "urls": []}
         save_config(config)
     return redirect(url_for('index'))
 
 
-@app.route('/remove_ignore/<word>')
-def remove_ignore(word):
+@app.route('/delete_bag_group/<name>')
+def delete_bag_group(name):
     config = load_config()
-    if word in config['ignore_list']:
-        config['ignore_list'].remove(word)
+    if name in config['bags']:
+        del config['bags'][name]
         save_config(config)
+    return redirect(url_for('index'))
+
+
+@app.route('/toggle_bag_group/<name>')
+def toggle_bag_group(name):
+    config = load_config()
+    if name in config['bags']:
+        current_status = config['bags'][name].get('active', True)
+        config['bags'][name]['active'] = not current_status
+        save_config(config)
+    return redirect(url_for('index'))
+
+
+@app.route('/add_url_to_group', methods=['POST'])
+def add_url_to_group():
+    config = load_config()
+    group_name = request.form.get('group_name')
+    new_url = request.form.get('url').strip()
+
+    if group_name in config['bags'] and new_url:
+        if new_url not in config['bags'][group_name]['urls']:
+            config['bags'][group_name]['urls'].append(new_url)
+            save_config(config)
+    return redirect(url_for('index'))
+
+
+@app.route('/remove_url', methods=['POST'])
+def remove_url():
+    config = load_config()
+    group_name = request.form.get('group_name')
+    url_to_remove = request.form.get('url')
+
+    if group_name in config['bags']:
+        if url_to_remove in config['bags'][group_name]['urls']:
+            config['bags'][group_name]['urls'].remove(url_to_remove)
+            save_config(config)
+    return redirect(url_for('index'))
+
+
+@app.route('/test_email')
+def test_email():
+    config = load_config()
+    recipients = config.get('emails', [])
+
+    if not recipients:
+        print("No recipients configured.")
+        return redirect(url_for('index'))
+
+    # Create dummy data
+    dummy_items = [{
+        "name": "TEST BAG (Picotin 18)",
+        "color": "Gold / Silver",
+        "group": "Test Group",
+        "link": "https://www.hermes.com/uk/en/",
+        "image": "https://assets.hermes.com/is/image/hermesproduct/picotin-lock-18-bag--056289CK37-front-1-300-0-1600-1600-q99_b.jpg"
+    }]
+
+    print(f"Sending test email to {recipients}...")
+    send_html_email(dummy_items, recipients)
+
     return redirect(url_for('index'))
 
 

@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hermes Bot Controller</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .bag-group-card { border-left: 5px solid #6c757d; }
+        .bag-group-card.active { border-left-color: #198754; }
+        .img-thumbnail { max-height: 100px; width: auto; }
+    </style>
 </head>
 <body class="bg-light">
 
@@ -12,17 +17,25 @@
     <h1 class="mb-4">👜 Hermes Bot Controller</h1>
 
     <div class="card mb-4 shadow-sm">
-        <div class="card-header bg-primary text-white">Current Status</div>
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <span>Current Status</span>
+            <span class="badge bg-light text-dark">{{ config.last_run_time }}</span>
+        </div>
         <div class="card-body">
             <h5 class="card-title">State: <strong>{{ config.last_run_status }}</strong></h5>
-            <p class="card-text">Last Check: {{ config.last_run_time }}</p>
+            {% if config.found_items %}
+                <div class="alert alert-success mt-3 mb-0">
+                    <strong>Success!</strong> Found {{ config.found_items|length }} items on last run.
+                </div>
+            {% endif %}
         </div>
     </div>
 
     <div class="row">
         <div class="col-md-6">
+
             <div class="card mb-4 shadow-sm">
-                <div class="card-header">⚙️ Configuration</div>
+                <div class="card-header">⚙️ Global Configuration</div>
                 <div class="card-body">
                     <form action="/update_settings" method="POST">
                         <div class="mb-3">
@@ -31,12 +44,11 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">Proxy Server (Optional)</label>
+                            <label class="form-label">Proxy (Optional)</label>
                             <input type="text" class="form-control" name="proxy" value="{{ config.proxy }}" placeholder="http://user:pass@ip:port">
-                            <div class="form-text text-muted">Supports HTTP/HTTPS proxies. Leave empty to use server IP.</div>
                         </div>
 
-                        <div class="row">
+                        <div class="row mb-3">
                             <div class="col">
                                 <label class="form-label">Min Wait (mins)</label>
                                 <input type="number" class="form-control" name="min_time" value="{{ config.min_interval_minutes }}">
@@ -46,55 +58,100 @@
                                 <input type="number" class="form-control" name="max_time" value="{{ config.max_interval_minutes }}">
                             </div>
                         </div>
-                        <button type="submit" class="btn btn-success mt-3">Save Settings</button>
+                        <div class="d-flex justify-content-between">
+                            <button type="submit" class="btn btn-success">Save Settings</button>
+                            <a href="/test_email" class="btn btn-outline-warning">Send Test Email</a>
+                        </div>
                     </form>
                 </div>
             </div>
 
             <div class="card mb-4 shadow-sm">
-                <div class="card-header">🚫 Ignore List</div>
+                <div class="card-header">➕ Add New Bag Group</div>
                 <div class="card-body">
-                    <ul class="list-group mb-3">
-                        {% for word in config.ignore_list %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            {{ word }}
-                            <a href="/remove_ignore/{{ word }}" class="btn btn-sm btn-outline-danger">x</a>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                    <form action="/add_ignore" method="POST" class="d-flex">
-                        <input type="text" class="form-control me-2" name="ignore_word" placeholder="e.g. strap, charm">
-                        <button type="submit" class="btn btn-secondary">Add</button>
+                    <form action="/add_bag_group" method="POST" class="d-flex">
+                        <input type="text" class="form-control me-2" name="bag_name" placeholder="e.g. Picotin 18" required>
+                        <button type="submit" class="btn btn-primary">Create</button>
                     </form>
                 </div>
             </div>
+
+            <h5 class="mb-3">Monitoring Targets</h5>
+            {% for name, data in config.bags.items() %}
+            <div class="card mb-3 shadow-sm bag-group-card {% if data.active %}active{% endif %}">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>{{ name }}</strong>
+                        <span class="badge {% if data.active %}bg-success{% else %}bg-secondary{% endif %} ms-1">
+                            {% if data.active %}Active{% else %}Paused{% endif %}
+                        </span>
+                    </div>
+                    <div>
+                        <a href="/toggle_bag_group/{{ name }}" class="btn btn-sm btn-outline-dark">
+                            {% if data.active %}⏸ Pause{% else %}▶ Resume{% endif %}
+                        </a>
+                        <a href="/delete_bag_group/{{ name }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete {{ name }}?')">🗑</a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush mb-3">
+                        {% for url in data.urls %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                            <a href="{{ url }}" target="_blank" class="text-truncate text-decoration-none" style="max-width: 85%;">
+                                <small>{{ url }}</small>
+                            </a>
+                            <form action="/remove_url" method="POST" style="display:inline;">
+                                <input type="hidden" name="group_name" value="{{ name }}">
+                                <input type="hidden" name="url" value="{{ url }}">
+                                <button type="submit" class="btn btn-sm text-danger border-0 bg-transparent">×</button>
+                            </form>
+                        </li>
+                        {% else %}
+                        <li class="text-muted small">No URLs added.</li>
+                        {% endfor %}
+                    </ul>
+
+                    <form action="/add_url_to_group" method="POST" class="input-group input-group-sm">
+                        <input type="hidden" name="group_name" value="{{ name }}">
+                        <input type="text" class="form-control" name="url" placeholder="Paste Hermes URL here..." required>
+                        <button class="btn btn-outline-secondary" type="submit">Add URL</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+
         </div>
 
         <div class="col-md-6">
-            <div class="card shadow-sm">
+            <div class="card shadow-sm sticky-top" style="top: 20px;">
                 <div class="card-header bg-success text-white">🛍️ Items Found (Last Run)</div>
                 <div class="card-body">
                     {% if config.found_items %}
                         <div class="list-group">
                         {% for item in config.found_items %}
                             <div class="list-group-item">
-                                <div class="d-flex w-100 justify-content-between align-items-center">
-                                    <div style="flex-grow: 1;">
-                                        <h6 class="mb-1">{{ item.name }}</h6>
-                                        <p class="mb-1 text-muted small">{{ item.full_text[:60] }}...</p>
-                                        <a href="{{ item.link }}" target="_blank" class="btn btn-sm btn-primary mt-1">View</a>
-                                    </div>
+                                <div class="d-flex align-items-start">
+                                    {% if item.image %}
+                                    <img src="{{ item.image }}" class="img-thumbnail me-3">
+                                    {% endif %}
 
-                                    <form action="/add_ignore" method="POST" class="ms-2">
-                                        <input type="hidden" name="ignore_word" value="{{ item.name.split(' ')[0] }}">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Ignore this type">x</button>
-                                    </form>
+                                    <div class="flex-grow-1">
+                                        <div class="d-flex justify-content-between">
+                                            <h6 class="mb-1">{{ item.name }}</h6>
+                                            <span class="badge bg-info text-dark">{{ item.group }}</span>
+                                        </div>
+                                        <p class="mb-1 text-muted small"><strong>Color:</strong> {{ item.color }}</p>
+                                        <a href="{{ item.link }}" target="_blank" class="btn btn-sm btn-dark mt-2 w-100">Buy Now</a>
+                                    </div>
                                 </div>
                             </div>
                         {% endfor %}
                         </div>
                     {% else %}
-                        <p class="text-muted">No available bags found on the last run.</p>
+                        <div class="text-center py-5 text-muted">
+                            <h4>📭</h4>
+                            <p>No available items found during the last check.</p>
+                        </div>
                     {% endif %}
                 </div>
             </div>

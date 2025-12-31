@@ -1,10 +1,15 @@
 {
-    "emails": [],
-    "ignore_list": ["strap", "charms"],
-    "min_interval_minutes": 10,
-    "max_interval_minutes": 20,
-    "last_run_time": "Never",
-    "last_run_status": "Idle",
-    "found_items": [],
-    "proxy": ""
+  "bags": {
+    "Picotin Lock 18": {
+      "active": true,
+      "urls": []
+    }
+  },
+  "emails": [],
+  "min_interval_minutes": 10,
+  "max_interval_minutes": 20,
+  "last_run_time": "Never",
+  "last_run_status": "Idle",
+  "found_items": [],
+  "proxy": ""
 }
