@@ -308,6 +308,7 @@ class BotManager:
 
         return found_items, was_blocked
 
+
     def cleanup(self):
         """Quit driver and remove temporary profile folder."""
         if self.driver:
@@ -316,16 +317,19 @@ class BotManager:
             except Exception:
                 pass
             self.driver = None
+            # Give Chrome a second to release locks/delete its own temp files
+            time.sleep(1.5)
 
         # Robust directory removal
         if self.profile_path and os.path.exists(self.profile_path):
             try:
-                shutil.rmtree(self.profile_path)
+                # ignore_errors=True prevents crash if files vanish during deletion
+                shutil.rmtree(self.profile_path, ignore_errors=True)
                 logger.info(f"Cleaned up profile: {self.profile_path}")
             except Exception as e:
+                # This block will likely not trigger now due to ignore_errors=True
                 logger.error(f"Failed to delete profile {self.profile_path}: {e}")
         self.profile_path = None
-
 
 # -------------------------------------------------------------------------
 # Standalone Functions (Module Level)
