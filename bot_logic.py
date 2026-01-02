@@ -1,6 +1,8 @@
 import os
 import smtplib
 import time
+import tempfile
+import shutil
 import random
 import logging
 from email.message import EmailMessage
@@ -36,14 +38,13 @@ class BotManager:
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--disable-gpu")
             options.add_argument("--disable-setuid-sandbox")
-            options.add_argument("--no-zygote")
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument("--window-size=1920,1080")
+            options.add_argument("--remote-debugging-port=9222")
+            options.add_argument("--dns-prefetch-disable")
+            options.add_argument("--disable-ipv6")
             options.add_argument(f"user-agent={self.current_user_agent}")
-
-            # Persistent cache
-            profile_path = os.path.join(os.getcwd(), "chrome_cache")
-            options.add_argument(f"user-data-dir={profile_path}")
+            options.add_argument("--disable-features=ChromeWhatsNewUI")
 
             # Block heavy content
             prefs = {
@@ -393,6 +394,13 @@ class BotManager:
     def cleanup(self):
         """Clean up browser resources"""
         if self.driver:
+            profile_path = None
+            # Extract profile path from options before quitting
+            for arg in self.driver.options.arguments:
+                if arg.startswith("user-data-dir="):
+                    profile_path = arg.split("=", 1)[1]
+                    break
+
             try:
                 logger.info("Closing browser")
                 self.driver.quit()
@@ -400,6 +408,13 @@ class BotManager:
                 logger.error(f"Error closing browser: {e}")
             finally:
                 self.driver = None
+
+            # Remove temp profile
+            if profile_path and os.path.exists(profile_path):
+                try:
+                    shutil.rmtree(profile_path)
+                except:
+                    pass
 
 
 def send_html_email(items, recipients):

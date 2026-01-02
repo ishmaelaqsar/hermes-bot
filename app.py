@@ -1,12 +1,14 @@
-import time
-import random
-import json
-import threading
+import atexit
 import datetime
+import json
 import logging
 import os
+import time
+import random
+import threading
 from flask import Flask, render_template, request, redirect, url_for
 from bot_logic import BotManager, send_html_email
+from pyvirtualdisplay import Display
 
 
 # Setup logging
@@ -23,33 +25,37 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CONFIG_FILE = 'config.json'
 
-
-def kill_zombie_chrome():
-    """Kills any lingering Chrome processes and unlocks the profile folder."""
-    logger.info("Cleaning up zombie Chrome processes...")
-    try:
-        # 1. Kill the processes
-        os.system("pkill -f chrome")
-        os.system("pkill -f undetected_chromedriver")
-        time.sleep(2)
-
-        # 2. Force delete the Lock file
-        cache_path = os.path.join(os.getcwd(), "chrome_cache")
-        lock_file = os.path.join(cache_path, "SingletonLock")
-
-        if os.path.exists(lock_file):
-            logger.info(f"Removing stuck lock file: {lock_file}")
-            os.remove(lock_file)
-
-    except Exception as e:
-        logger.warning(f"Cleanup warning: {e}")
-
-
-# Run cleanup immediately on start
-kill_zombie_chrome()
-
 # Global bot manager instance
 bot_manager = None
+
+# Initialize a global variable for the display
+virtual_display = None
+
+
+def start_display():
+    global virtual_display
+    try:
+        # Start Xvfb managed by Python
+        logger.info("Starting virtual display...")
+        virtual_display = Display(visible=0, size=(1920, 1080))
+        virtual_display.start()
+        logger.info("Virtual display started successfully.")
+    except Exception as e:
+        logger.error(f"Failed to start virtual display: {e}")
+
+
+def stop_display():
+    global virtual_display
+    if virtual_display:
+        try:
+            logger.info("Stopping virtual display...")
+            virtual_display.stop()
+        except Exception as e:
+            logger.error(f"Error stopping display: {e}")
+
+
+# Register cleanup on exit
+atexit.register(stop_display)
 
 
 def load_config():
@@ -199,11 +205,6 @@ def background_worker():
         time.sleep(wait_seconds)
 
 
-# Start background thread
-thread = threading.Thread(target=background_worker, daemon=True)
-thread.start()
-
-
 @app.route('/')
 def index():
     config = load_config()
@@ -345,4 +346,14 @@ def restart_browser():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # 1. Start the display FIRST
+    start_display()
+
+    # 2. Start the background worker SECOND (Now it sees the display!)
+    logger.info("Starting background worker thread...")
+    thread = threading.Thread(target=background_worker, daemon=True)
+    thread.start()
+
+    # 3. Start Flask LAST
+    # use_reloader=False is REQUIRED when using threads to prevent the worker from running twice
+    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)

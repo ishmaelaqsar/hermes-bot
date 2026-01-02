@@ -3,3 +3,5 @@ webdriver-manager
 flask
 undetected-chromedriver
 setuptools
+pyvirtualdisplay
+psutil
