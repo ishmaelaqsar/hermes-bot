@@ -22,10 +22,9 @@ class BotManager:
         self.proxy = proxy
         self.driver = None
         self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
         ]
         self.current_user_agent = random.choice(self.user_agents)
         self._initialize_driver()
@@ -65,21 +64,6 @@ class BotManager:
                 headless=False,
                 use_subprocess=True
             )
-
-            # Override navigator.webdriver flag (try-except in case CDP not available)
-            try:
-                self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
-                    'source': '''
-                        Object.defineProperty(navigator, 'webdriver', {
-                            get: () => undefined
-                        });
-                        window.chrome = {
-                            runtime: {}
-                        };
-                    '''
-                })
-            except Exception as e:
-                logger.debug(f"CDP injection skipped: {e}")
 
             logger.info("Browser initialized successfully")
 
