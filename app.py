@@ -356,6 +356,14 @@ def reset_stats():
     save_config(config)
     return redirect(url_for('index'))
 
+@app.route('/clear_blacklist')
+def clear_blacklist():
+    config = load_config()
+    config['url_blacklist'] = {}
+    save_config(config)
+    logger.info("Manual blacklist clear triggered by user.")
+    return redirect(url_for('index'))
+
 @app.route('/restart_browser')
 def restart_browser():
     global bot_manager

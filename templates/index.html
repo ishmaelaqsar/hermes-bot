@@ -178,6 +178,29 @@
         </div>
 
         <div class="col-md-6">
+
+          {% if config.url_blacklist %}
+          <div class="card mb-4 shadow-sm border-danger">
+            <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+              <span>⛔ Blacklisted URLs (24h)</span>
+              <a href="/clear_blacklist" class="btn btn-sm btn-light text-danger" onclick="return confirm('Clear all blacklisted URLs? Only do this if you have changed IP/Proxy.')">Clear All</a>
+            </div>
+            <div class="card-body p-0">
+              <div class="alert alert-warning m-2 small">
+                The following URLs caused a block and will be skipped for 24 hours.
+              </div>
+              <ul class="list-group list-group-flush">
+                {% for url, time in config.url_blacklist.items() %}
+                <li class="list-group-item small bg-light">
+                  <div class="fw-bold text-truncate" title="{{ url }}">{{ url }}</div>
+                  <div class="text-muted" style="font-size: 0.8rem;">Blocked at: {{ time }}</div>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+          {% endif %}
+
           <div class="card shadow-sm sticky-top" style="top: 20px;">
             <div class="card-header bg-success text-white">🛍️ Items Found (Last Run)</div>
             <div class="card-body">
