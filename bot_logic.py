@@ -5,8 +5,9 @@ import tempfile
 import shutil
 import random
 import logging
+from datetime import datetime, timedelta
 from email.message import EmailMessage
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -40,7 +41,6 @@ class BotManager:
             # -------------------------------------------------
             # 1. PROFILE & DIRECTORY MANAGEMENT
             # -------------------------------------------------
-            # Explicitly create a temp dir so we can reliably delete it later
             self.profile_path = tempfile.mkdtemp(prefix="hermes_bot_")
             options.add_argument(f"--user-data-dir={self.profile_path}")
 
@@ -55,7 +55,6 @@ class BotManager:
             options.add_argument("--disable-features=IsolateOrigins,site-per-process")
             options.add_argument("--disable-blink-features=AutomationControlled")
 
-            # Fixes for server environments (DataDome/Timeout handling)
             options.add_argument("--remote-debugging-port=9222")
             options.add_argument("--dns-prefetch-disable")
             options.add_argument("--disable-ipv6")
@@ -63,23 +62,18 @@ class BotManager:
             # -------------------------------------------------
             # 3. FINGERPRINTING & STEALTH
             # -------------------------------------------------
-            # Randomize Window Size
             w = random.choice([1366, 1440, 1920])
             h = random.choice([768, 900, 1080])
             options.add_argument(f"--window-size={w},{h}")
 
-            # Language & User Agent
             options.add_argument("--lang=en-GB")
             self.current_user_agent = random.choice(self.user_agents)
             options.add_argument(f"user-agent={self.current_user_agent}")
 
-            # Proxy Setup
             if self.proxy and self.proxy.strip():
                 options.add_argument(f'--proxy-server={self.proxy}')
 
-            # Preferences (Bandwidth saving + Stealth)
             prefs = {
-                # "profile.managed_default_content_settings.images": 2, # Uncomment to save bandwidth
                 "credentials_enable_service": False,
                 "profile.password_manager_enabled": False,
                 "profile.default_content_setting_values.notifications": 2,
@@ -101,24 +95,20 @@ class BotManager:
                 driver_executable_path=None
             )
 
-            # Apply JS patches (only safe ones)
             self._apply_stealth_scripts()
             logger.info("Browser initialized successfully.")
 
         except Exception as e:
             logger.error(f"Failed to initialize browser: {e}")
-            self.cleanup() # Clean up the temp dir if init fails
+            self.cleanup()
             raise
 
     def _apply_stealth_scripts(self):
         """Apply JavaScript patches."""
         stealth_scripts = """
-        // Overwrite the `plugins` property to look like a standard user
         Object.defineProperty(navigator, 'plugins', {
             get: () => [1, 2, 3, 4, 5]
         });
-
-        // Mock permissions API to allow notifications query (common fingerprint check)
         const originalQuery = window.navigator.permissions.query;
         window.navigator.permissions.query = (parameters) => (
             parameters.name === 'notifications' ?
@@ -134,12 +124,10 @@ class BotManager:
             logger.debug(f"Stealth script injection failed: {e}")
 
     def _human_like_delay(self, min_sec=2.0, max_sec=5.0):
-        """Sleep for a random amount of time to mimic human behavior."""
         delay = random.uniform(min_sec, max_sec)
         time.sleep(delay)
 
     def _random_scroll(self):
-        """Perform random scroll actions."""
         try:
             scroll_amount = random.randint(300, 700)
             self.driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
@@ -148,7 +136,6 @@ class BotManager:
             logger.debug(f"Scroll failed: {e}")
 
     def _is_blocked(self, page_source=None) -> bool:
-        """Check if the page content indicates a bot block."""
         try:
             if not page_source:
                 page_source = self.driver.page_source
@@ -158,44 +145,36 @@ class BotManager:
                 "verify you are a human", "security check"
             ]
 
-            # Check Title & URL
             if any(k in self.driver.title.lower() for k in ["blocked", "security", "captcha"]):
                 return True
             if "captcha" in self.driver.current_url.lower():
                 return True
 
-            # Check Content
             source_lower = page_source.lower()
             return any(k in source_lower for k in blocked_keywords)
 
         except Exception:
-            return True # Assume blocked if we can't even read the page
+            return True
 
     def _check_unavailability(self) -> bool:
-        """Return True if item is definitively unavailable."""
         try:
-            # 1. Look for 'Add to Cart' button (Best indicator of Availability)
             buttons = self.driver.find_elements(By.XPATH, "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to cart')]")
             if buttons:
                 for btn in buttons:
                     if btn.is_displayed() and btn.is_enabled():
-                        return False # Available!
+                        return False
 
-            # 2. Look for Explicit 'Sold Out' text
             text_indicators = ["sold out", "out of stock", "no longer available"]
             page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
             if any(i in page_text for i in text_indicators):
                 return True
 
-            # Default: If we can't find an "Add" button, assume unavailable
             return True
         except Exception:
             return True
 
     def _extract_product_details(self, url: str, group_name: str) -> Optional[Dict]:
-        """Extract name, color, and image from product page."""
         try:
-            # 1. Extract Name
             name = group_name
             try:
                 h1 = self.driver.find_element(By.TAG_NAME, "h1")
@@ -203,17 +182,14 @@ class BotManager:
             except:
                 pass
 
-            # 2. Extract Color
             color = "Unknown"
             try:
-                # Common Hermes color element classes
                 elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'color') or contains(@class, 'Color')]//span")
                 if elements:
                     color = elements[0].text.strip()
             except:
                 pass
 
-            # 3. Extract Image
             image = ""
             try:
                 imgs = self.driver.find_elements(By.XPATH, "//img[contains(@src, 'assets.hermes.com')]")
@@ -255,7 +231,6 @@ class BotManager:
                 logger.info(f"Item unavailable: {url}")
                 return None, False
 
-            # If we get here, it might be available
             details = self._extract_product_details(url, group_name)
             if details:
                 logger.info(f"✓ FOUND: {details['name']}")
@@ -267,16 +242,23 @@ class BotManager:
             logger.error(f"Error checking {url}: {e}")
             return None, False
 
-    def run_check(self, bag_config: Dict) -> Tuple[List[Dict], bool]:
-        """Main entry point to check all groups."""
+    def run_check(self, bag_config: Dict, blacklist: Dict[str, str] = {}) -> Tuple[List[Dict], bool, Optional[str]]:
+        """
+        Main entry point to check all groups.
+        Args:
+            bag_config: Config for bags
+            blacklist: Dictionary of {url: timestamp_string}
+        Returns:
+            (found_items, was_blocked, culprit_url)
+        """
         found_items = []
         was_blocked = False
+        culprit_url = None
 
         if not self.driver:
             self._initialize_driver()
 
         try:
-            # Get active groups
             groups = [(k, v) for k, v in bag_config.items() if v.get('active', True)]
             random.shuffle(groups)
 
@@ -285,54 +267,64 @@ class BotManager:
                 random.shuffle(urls)
 
                 for url in urls:
+                    # --- Blacklist Check ---
+                    if url in blacklist:
+                        try:
+                            blocked_time = datetime.fromisoformat(blacklist[url])
+                            if datetime.now() - blocked_time < timedelta(hours=24):
+                                logger.info(f"⏭️ Skipping blacklisted URL (Time remaining): {url}")
+                                continue
+                            else:
+                                logger.info(f"Blacklist expired for: {url}")
+                                # We don't modify the dict here, app.py handles cleanup
+                        except ValueError:
+                            pass # Invalid date format, try anyway
+
+                    # --- Perform Check ---
                     details, blocked = self.check_single_url(url, group_name)
 
                     if blocked:
-                        return found_items, True # Stop immediately if blocked
+                        # Return immediately, identifying the URL that caused it
+                        return found_items, True, url
 
                     if details:
                         found_items.append(details)
 
-                    self._human_like_delay(5, 10) # Delay between items
+                    self._human_like_delay(5, 10)
 
-                self._human_like_delay(10, 20) # Delay between groups
+                self._human_like_delay(10, 20)
 
         except Exception as e:
             logger.error(f"Run loop error: {e}")
-            # If the driver crashed, we might be blocked or just erroring out
             try:
                 if self._is_blocked():
                     was_blocked = True
+                    # If we crashed and are blocked, we might not know exactly which URL,
+                    # but usually it's the current one. For safety, we just return blocked status.
             except:
                 pass
 
-        return found_items, was_blocked
-
+        return found_items, was_blocked, culprit_url
 
     def cleanup(self):
-        """Quit driver and remove temporary profile folder."""
         if self.driver:
             try:
                 self.driver.quit()
             except Exception:
                 pass
             self.driver = None
-            # Give Chrome a second to release locks/delete its own temp files
             time.sleep(1.5)
 
-        # Robust directory removal
         if self.profile_path and os.path.exists(self.profile_path):
             try:
-                # ignore_errors=True prevents crash if files vanish during deletion
                 shutil.rmtree(self.profile_path, ignore_errors=True)
                 logger.info(f"Cleaned up profile: {self.profile_path}")
             except Exception as e:
-                # This block will likely not trigger now due to ignore_errors=True
                 logger.error(f"Failed to delete profile {self.profile_path}: {e}")
         self.profile_path = None
 
 # -------------------------------------------------------------------------
-# Standalone Functions (Module Level)
+# Standalone Functions
 # -------------------------------------------------------------------------
 
 def send_html_email(items: List[Dict], recipients: List[str]):
@@ -352,7 +344,6 @@ def send_html_email(items: List[Dict], recipients: List[str]):
     msg["From"] = sender
     msg["To"] = ", ".join(recipients)
 
-    # HTML Body Construction
     html_body = """
     <div style='font-family: sans-serif; max-width: 600px; margin: auto;'>
         <h2 style='border-bottom: 2px solid black;'>🛍️ Stock Alert</h2>

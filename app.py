@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
     "blocked_count": 0,
     "success_count": 0,
     "last_blocked_time": None,
+    "url_blacklist": {},  # { "url": "iso_timestamp" }
     "last_run_status": "Waiting to start..."
 }
 
@@ -54,7 +55,6 @@ virtual_display: Optional[Display] = None
 # Display Management (Xvfb)
 # -------------------------------------------------------------------------
 def start_display():
-    """Start the virtual display (Xvfb) for headless Chrome."""
     global virtual_display
     try:
         logger.info("Starting virtual display...")
@@ -65,7 +65,6 @@ def start_display():
         logger.error(f"Failed to start virtual display: {e}")
 
 def stop_display():
-    """Stop the virtual display on exit."""
     global virtual_display
     if virtual_display:
         try:
@@ -81,23 +80,23 @@ atexit.register(stop_display)
 # Config Management
 # -------------------------------------------------------------------------
 def load_config() -> Dict[str, Any]:
-    """Load configuration with safe fallback to defaults."""
     if not os.path.exists(CONFIG_FILE):
         return DEFAULT_CONFIG.copy()
 
     try:
         with open(CONFIG_FILE, 'r') as f:
             data = json.load(f)
-            # Merge with defaults to ensure all keys exist
             config = DEFAULT_CONFIG.copy()
             config.update(data)
+            # Ensure complex defaults exist if missing in JSON
+            if "url_blacklist" not in config:
+                config["url_blacklist"] = {}
             return config
     except (json.JSONDecodeError, Exception) as e:
         logger.error(f"Error loading config: {e}. Using defaults.")
         return DEFAULT_CONFIG.copy()
 
 def save_config(data: Dict[str, Any]):
-    """Save configuration to disk."""
     try:
         with open(CONFIG_FILE, 'w') as f:
             json.dump(data, f, indent=4)
@@ -109,20 +108,39 @@ def save_config(data: Dict[str, Any]):
 # Background Worker Logic
 # -------------------------------------------------------------------------
 def calculate_backoff_delay(blocked_count: int) -> int:
-    """Calculate exponential backoff delay in seconds."""
     if blocked_count <= 0:
         return 0
-
-    # Exponential: 5m, 10m, 20m, 40m, 80m, capped at 2 hours
     base_minutes = 5
     backoff_minutes = min(base_minutes * (2 ** (blocked_count - 1)), 120)
-
-    # Add +/- 20% jitter
     jitter = random.uniform(0.8, 1.2)
     return int(backoff_minutes * 60 * jitter)
 
+def prune_blacklist(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove URLs from blacklist that are older than 24 hours."""
+    now = datetime.datetime.now()
+    blacklist = config.get("url_blacklist", {})
+    new_blacklist = {}
+    modified = False
+
+    for url, timestamp_str in blacklist.items():
+        try:
+            blocked_time = datetime.datetime.fromisoformat(timestamp_str)
+            if now - blocked_time < datetime.timedelta(hours=24):
+                new_blacklist[url] = timestamp_str
+            else:
+                logger.info(f"Removing {url} from blacklist (Expired)")
+                modified = True
+        except ValueError:
+            # If format is bad, remove it
+            modified = True
+
+    if modified:
+        config["url_blacklist"] = new_blacklist
+        save_config(config)
+
+    return config
+
 def background_worker():
-    """Main background loop for checking stock."""
     global bot_manager
     logger.info("Background worker started")
     consecutive_errors = 0
@@ -130,19 +148,20 @@ def background_worker():
     while True:
         config = load_config()
 
+        # 0. Prune Blacklist
+        config = prune_blacklist(config)
+
         try:
             # 1. Handle Blocking / Backoff
             blocked_count = config.get('blocked_count', 0)
             if blocked_count > 0:
                 delay = calculate_backoff_delay(blocked_count)
                 logger.warning(f"⚠️ Backing off for {delay // 60} minutes due to blocks.")
-
                 config['last_run_status'] = f"Backing off ({delay // 60}m due to blocks)"
                 save_config(config)
-
                 time.sleep(delay)
 
-                # Decay block count after successful wait
+                # Decay block count
                 config = load_config()
                 config['blocked_count'] = max(0, config['blocked_count'] - 1)
                 save_config(config)
@@ -156,18 +175,30 @@ def background_worker():
             config['last_run_status'] = "Checking stock..."
             save_config(config)
 
-            found_items, was_blocked = bot_manager.run_check(config.get('bags', {}))
+            # Pass blacklist to run_check
+            found_items, was_blocked, culprit_url = bot_manager.run_check(
+                config.get('bags', {}),
+                config.get('url_blacklist', {})
+            )
 
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            config = load_config() # Reload to reduce race conditions
+            config = load_config()
 
             if was_blocked:
+                # Update general stats
                 config['blocked_count'] = config.get('blocked_count', 0) + 1
                 config['last_blocked_time'] = timestamp
-                config['last_run_status'] = f"⚠️ BLOCKED (Count: {config['blocked_count']})"
+
+                # Update Blacklist if a specific URL caused it
+                if culprit_url:
+                    logger.warning(f"🚫 Blacklisting URL for 24h: {culprit_url}")
+                    config["url_blacklist"][culprit_url] = datetime.datetime.now().isoformat()
+                    config['last_run_status'] = f"⚠️ BLOCKED by {culprit_url} (Count: {config['blocked_count']})"
+                else:
+                    config['last_run_status'] = f"⚠️ BLOCKED globally (Count: {config['blocked_count']})"
+
                 logger.error(f"Bot blocked. Total blocks: {config['blocked_count']}")
 
-                # Force restart on block
                 if bot_manager:
                     bot_manager.cleanup()
                     bot_manager = None
@@ -175,7 +206,7 @@ def background_worker():
             else:
                 # Success
                 config['success_count'] = config.get('success_count', 0) + 1
-                config['blocked_count'] = max(0, config.get('blocked_count', 0) - 1) # Decay
+                config['blocked_count'] = max(0, config.get('blocked_count', 0) - 1)
                 config['last_run_time'] = timestamp
                 config['last_run_status'] = f"✓ Healthy (Found: {len(found_items)})"
 
@@ -190,7 +221,6 @@ def background_worker():
         except Exception as e:
             consecutive_errors += 1
             logger.error(f"Worker Exception: {e}", exc_info=True)
-
             config = load_config()
             config['last_run_status'] = f"Error: {str(e)[:50]}"
             save_config(config)
@@ -206,7 +236,6 @@ def background_worker():
         config = load_config()
         min_m = config.get('min_interval_minutes', 20)
         max_m = config.get('max_interval_minutes', 40)
-
         wait_sec = random.randint(min_m * 60, max_m * 60)
         logger.info(f"Sleeping for {wait_sec // 60}m {wait_sec % 60}s...")
         time.sleep(wait_sec)
@@ -321,7 +350,8 @@ def reset_stats():
     config.update({
         'blocked_count': 0,
         'success_count': 0,
-        'last_blocked_time': None
+        'last_blocked_time': None,
+        'url_blacklist': {} # Also clearing blacklist on reset might be desired
     })
     save_config(config)
     return redirect(url_for('index'))
@@ -340,14 +370,10 @@ def restart_browser():
 # Entry Point
 # -------------------------------------------------------------------------
 if __name__ == '__main__':
-    # 1. Start Virtual Display (Crucial for Headless Chrome)
     start_display()
 
-    # 2. Start Background Worker
     logger.info("Starting background worker thread...")
     thread = threading.Thread(target=background_worker, daemon=True)
     thread.start()
 
-    # 3. Start Flask App
-    # use_reloader=False is mandatory when using background threads
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
