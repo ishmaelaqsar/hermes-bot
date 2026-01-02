@@ -75,8 +75,8 @@ def load_config():
         return {
             "bags": {},
             "emails": [],
-            "min_interval_minutes": 10,
-            "max_interval_minutes": 20,
+            "min_interval_minutes": 20,
+            "max_interval_minutes": 40,
             "proxy": "",
             "blocked_count": 0,
             "success_count": 0,
