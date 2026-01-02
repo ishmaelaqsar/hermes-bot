@@ -6,21 +6,24 @@ import shutil
 import random
 import logging
 from email.message import EmailMessage
+from typing import Optional, Dict, List, Tuple
+
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 
+# Setup module logger
 logger = logging.getLogger(__name__)
 
-
 class BotManager:
-    """Manages persistent browser instance and anti-detection measures"""
+    """Manages persistent browser instance and anti-detection measures."""
 
-    def __init__(self, proxy=None):
+    def __init__(self, proxy: str = None):
         self.proxy = proxy
         self.driver = None
+        self.profile_path = None
+
+        # User Agents matching Chrome 143 (Server Version)
         self.user_agents = [
             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
@@ -30,345 +33,277 @@ class BotManager:
         self._initialize_driver()
 
     def _initialize_driver(self):
-        """Initialize the browser with anti-detection measures"""
+        """Initialize Chrome with robust anti-detection settings."""
         try:
             options = uc.ChromeOptions()
+
+            # -------------------------------------------------
+            # 1. PROFILE & DIRECTORY MANAGEMENT
+            # -------------------------------------------------
+            # Explicitly create a temp dir so we can reliably delete it later
+            self.profile_path = tempfile.mkdtemp(prefix="hermes_bot_")
+            options.add_argument(f"--user-data-dir={self.profile_path}")
+
+            # -------------------------------------------------
+            # 2. NETWORK & SECURITY FLAGS
+            # -------------------------------------------------
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--disable-gpu")
             options.add_argument("--disable-setuid-sandbox")
+            options.add_argument("--disable-web-security")
+            options.add_argument("--disable-features=IsolateOrigins,site-per-process")
             options.add_argument("--disable-blink-features=AutomationControlled")
-            options.add_argument("--window-size=1920,1080")
+
+            # Fixes for server environments (DataDome/Timeout handling)
             options.add_argument("--remote-debugging-port=9222")
             options.add_argument("--dns-prefetch-disable")
             options.add_argument("--disable-ipv6")
+
+            # -------------------------------------------------
+            # 3. FINGERPRINTING & STEALTH
+            # -------------------------------------------------
+            # Randomize Window Size
+            w = random.choice([1366, 1440, 1920])
+            h = random.choice([768, 900, 1080])
+            options.add_argument(f"--window-size={w},{h}")
+
+            # Language & User Agent
+            options.add_argument("--lang=en-GB")
+            self.current_user_agent = random.choice(self.user_agents)
             options.add_argument(f"user-agent={self.current_user_agent}")
-            options.add_argument("--disable-features=ChromeWhatsNewUI")
 
-            # Block heavy content
-            prefs = {
-                "profile.managed_default_content_settings.images": 2,
-                "profile.managed_default_content_settings.fonts": 2,
-                "profile.managed_default_content_settings.stylesheets": 1,  # Keep CSS
-            }
-            options.add_experimental_option("prefs", prefs)
-
+            # Proxy Setup
             if self.proxy and self.proxy.strip():
                 options.add_argument(f'--proxy-server={self.proxy}')
 
+            # Preferences (Bandwidth saving + Stealth)
+            prefs = {
+                # "profile.managed_default_content_settings.images": 2, # Uncomment to save bandwidth
+                "credentials_enable_service": False,
+                "profile.password_manager_enabled": False,
+                "profile.default_content_setting_values.notifications": 2,
+                "intl.accept_languages": "en-GB,en-US;q=0.9,en;q=0.8",
+            }
+            options.add_experimental_option("prefs", prefs)
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+
+            # -------------------------------------------------
+            # 4. INITIALIZATION
+            # -------------------------------------------------
             chrome_ver = int(os.getenv("CHROME_VERSION", "143"))
+            logger.info(f"Starting Chrome {chrome_ver} with profile {self.profile_path}...")
 
             self.driver = uc.Chrome(
                 options=options,
                 version_main=chrome_ver,
                 headless=False,
-                use_subprocess=True
+                use_subprocess=True,
+                driver_executable_path=None
             )
 
-            logger.info("Browser initialized successfully")
+            # Apply JS patches (only safe ones)
+            self._apply_stealth_scripts()
+            logger.info("Browser initialized successfully.")
 
         except Exception as e:
             logger.error(f"Failed to initialize browser: {e}")
+            self.cleanup() # Clean up the temp dir if init fails
             raise
 
-    def _human_like_delay(self, min_sec=1, max_sec=3):
-        """Random delay to simulate human behavior"""
+    def _apply_stealth_scripts(self):
+        """Apply JavaScript patches."""
+        stealth_scripts = """
+        // Overwrite the `plugins` property to look like a standard user
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3, 4, 5]
+        });
+
+        // Mock permissions API to allow notifications query (common fingerprint check)
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) => (
+            parameters.name === 'notifications' ?
+            Promise.resolve({ state: Notification.permission }) :
+            originalQuery(parameters)
+        );
+        """
+        try:
+            self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+                'source': stealth_scripts
+            })
+        except Exception as e:
+            logger.debug(f"Stealth script injection failed: {e}")
+
+    def _human_like_delay(self, min_sec=2.0, max_sec=5.0):
+        """Sleep for a random amount of time to mimic human behavior."""
         delay = random.uniform(min_sec, max_sec)
         time.sleep(delay)
 
-    def _random_mouse_movement(self):
-        """Simulate random mouse movements"""
-        try:
-            actions = ActionChains(self.driver)
-            for _ in range(random.randint(1, 3)):
-                x = random.randint(100, 500)
-                y = random.randint(100, 500)
-                actions.move_by_offset(x, y)
-            actions.perform()
-        except Exception as e:
-            logger.debug(f"Mouse movement skipped: {e}")
-
     def _random_scroll(self):
-        """Simulate random scrolling behavior"""
+        """Perform random scroll actions."""
         try:
-            scroll_amount = random.randint(300, 800)
+            scroll_amount = random.randint(300, 700)
             self.driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
-            self._human_like_delay(0.5, 1.5)
-
-            # Sometimes scroll back up a bit
-            if random.random() < 0.3:
-                scroll_back = random.randint(100, 300)
-                self.driver.execute_script(f"window.scrollBy(0, -{scroll_back});")
-                self._human_like_delay(0.3, 0.8)
+            time.sleep(random.uniform(0.5, 1.5))
         except Exception as e:
-            logger.debug(f"Scroll simulation skipped: {e}")
+            logger.debug(f"Scroll failed: {e}")
 
-    def _is_blocked(self, page_source=None):
-        """Check if the page shows signs of being blocked"""
-        if page_source is None:
-            page_source = self.driver.page_source
+    def _is_blocked(self, page_source=None) -> bool:
+        """Check if the page content indicates a bot block."""
+        try:
+            if not page_source:
+                page_source = self.driver.page_source
 
-        blocked_indicators = [
-            "captcha-delivery.com",
-            "DataDome",
-            "Access Denied",
-            "blocked",
-            "checking your browser",
-            "Please verify you are a human"
-        ]
+            blocked_keywords = [
+                "captcha-delivery.com", "datadome", "access denied",
+                "verify you are a human", "security check"
+            ]
 
-        source_lower = page_source.lower()
-        for indicator in blocked_indicators:
-            if indicator.lower() in source_lower:
-                logger.warning(f"Blocking detected: {indicator}")
+            # Check Title & URL
+            if any(k in self.driver.title.lower() for k in ["blocked", "security", "captcha"]):
+                return True
+            if "captcha" in self.driver.current_url.lower():
                 return True
 
-        return False
+            # Check Content
+            source_lower = page_source.lower()
+            return any(k in source_lower for k in blocked_keywords)
 
-    def check_single_url(self, url, group_name):
-        """Check a single URL for availability with anti-detection measures"""
-        logger.info(f"Checking: {url}")
+        except Exception:
+            return True # Assume blocked if we can't even read the page
 
+    def _check_unavailability(self) -> bool:
+        """Return True if item is definitively unavailable."""
         try:
-            # Random delay before request
-            self._human_like_delay(2, 5)
+            # 1. Look for 'Add to Cart' button (Best indicator of Availability)
+            buttons = self.driver.find_elements(By.XPATH, "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to cart')]")
+            if buttons:
+                for btn in buttons:
+                    if btn.is_displayed() and btn.is_enabled():
+                        return False # Available!
 
-            # Load the page
+            # 2. Look for Explicit 'Sold Out' text
+            text_indicators = ["sold out", "out of stock", "no longer available"]
+            page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+            if any(i in page_text for i in text_indicators):
+                return True
+
+            # Default: If we can't find an "Add" button, assume unavailable
+            return True
+        except Exception:
+            return True
+
+    def _extract_product_details(self, url: str, group_name: str) -> Optional[Dict]:
+        """Extract name, color, and image from product page."""
+        try:
+            # 1. Extract Name
+            name = group_name
+            try:
+                h1 = self.driver.find_element(By.TAG_NAME, "h1")
+                name = h1.text.strip()
+            except:
+                pass
+
+            # 2. Extract Color
+            color = "Unknown"
+            try:
+                # Common Hermes color element classes
+                elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'color') or contains(@class, 'Color')]//span")
+                if elements:
+                    color = elements[0].text.strip()
+            except:
+                pass
+
+            # 3. Extract Image
+            image = ""
+            try:
+                imgs = self.driver.find_elements(By.XPATH, "//img[contains(@src, 'assets.hermes.com')]")
+                if imgs:
+                    image = imgs[0].get_attribute("src")
+                    if image.startswith("//"):
+                        image = "https:" + image
+            except:
+                pass
+
+            return {
+                "name": name,
+                "color": color,
+                "link": url,
+                "image": image,
+                "group": group_name
+            }
+        except Exception as e:
+            logger.error(f"Extraction failed: {e}")
+            return None
+
+    def check_single_url(self, url: str, group_name: str) -> Tuple[Optional[Dict], bool]:
+        """
+        Check a single URL.
+        Returns: (ProductDetails, IsBlocked)
+        """
+        logger.info(f"Checking: {url}")
+        try:
             self.driver.get(url)
+            self._human_like_delay(3, 6)
 
-            # Initial wait for page to start loading
-            time.sleep(2)
-
-            # Check for blocking immediately
             if self._is_blocked():
-                logger.error(f"❌ BLOCKED: Anti-bot detected for {url}")
-                return None, True  # Return blocked flag
-
-            # Simulate human behavior
-            self._random_scroll()
-            self._human_like_delay(1, 2)
-
-            # Wait for content to load with random variation
-            wait_time = random.uniform(3, 6)
-            time.sleep(wait_time)
-
-            # Check again for late-loading blocks
-            if self._is_blocked():
-                logger.error(f"❌ BLOCKED: Late anti-bot detection for {url}")
+                logger.error(f"❌ BLOCKED: {url}")
                 return None, True
 
-            # Check availability
-            unavailable = self._check_unavailability()
-            if unavailable:
+            self._random_scroll()
+
+            if self._check_unavailability():
                 logger.info(f"Item unavailable: {url}")
                 return None, False
 
-            # Extract product details
+            # If we get here, it might be available
             details = self._extract_product_details(url, group_name)
-
             if details:
-                logger.info(f"✓ FOUND: {details['name']} - {details['color']}")
+                logger.info(f"✓ FOUND: {details['name']}")
                 return details, False
-            else:
-                logger.info(f"Could not extract details for {url}")
-                return None, False
+
+            return None, False
 
         except Exception as e:
             logger.error(f"Error checking {url}: {e}")
-            # Check if error is due to blocking
-            try:
-                if self._is_blocked():
-                    return None, True
-            except:
-                pass
             return None, False
 
-    def _check_unavailability(self):
-        """Check if item is unavailable using multiple strategies"""
-        try:
-            # Strategy 1: Explicit unavailability message
-            unavailable_msgs = self.driver.find_elements(
-                By.XPATH,
-                "//span[contains(@class, 'message-info')][contains(normalize-space(.), 'no longer available')]"
-            )
-            if unavailable_msgs and any(msg.is_displayed() for msg in unavailable_msgs):
-                return True
-
-            # Strategy 2: Check for "Add to cart" button
-            add_buttons = self.driver.find_elements(
-                By.XPATH,
-                "//button[contains(normalize-space(.), 'Add to cart') or contains(normalize-space(.), 'Add to bag')]"
-            )
-
-            # If button exists and is enabled, item is available
-            if add_buttons:
-                for btn in add_buttons:
-                    if btn.is_displayed() and btn.is_enabled():
-                        return False  # Available!
-
-            # Strategy 3: Look for sold out indicators
-            sold_out_indicators = self.driver.find_elements(
-                By.XPATH,
-                "//*[contains(text(), 'sold out') or contains(text(), 'Sold Out') or contains(text(), 'out of stock')]"
-            )
-            if sold_out_indicators:
-                return True
-
-            # If no clear availability signal, assume unavailable to avoid false positives
-            return True
-
-        except Exception as e:
-            logger.debug(f"Availability check error: {e}")
-            return True  # Assume unavailable on error
-
-    def _extract_product_details(self, url, group_name):
-        """Extract product details from the page"""
-        try:
-            # Extract color
-            color = "Unknown"
-            try:
-                color_elems = self.driver.find_elements(
-                    By.XPATH,
-                    "//span[contains(@class, 'expansion-panel-header-right-part')]//div[not(contains(@class, 'sr-only'))]"
-                )
-                if color_elems:
-                    color = color_elems[0].text.strip()
-
-                # Fallback color extraction
-                if not color or color == "Unknown":
-                    color_elems = self.driver.find_elements(
-                        By.XPATH,
-                        "//*[contains(@class, 'color') or contains(@class, 'Color')]//span"
-                    )
-                    if color_elems:
-                        color = color_elems[0].text.strip()
-            except Exception as e:
-                logger.debug(f"Color extraction error: {e}")
-
-            # Extract image
-            image_src = ""
-            try:
-                # Strategy A: High priority image
-                imgs = self.driver.find_elements(By.XPATH, "//img[@fetchpriority='high']")
-                if imgs:
-                    image_src = imgs[0].get_attribute("src")
-
-                # Strategy B: Hermes asset URL
-                if not image_src:
-                    imgs = self.driver.find_elements(
-                        By.XPATH,
-                        "//img[contains(@src, 'assets.hermes.com/is/image/hermesproduct')]"
-                    )
-                    if imgs:
-                        image_src = imgs[0].get_attribute("src")
-
-                # Strategy C: Any product image
-                if not image_src:
-                    imgs = self.driver.find_elements(
-                        By.XPATH,
-                        "//img[contains(@alt, 'product') or contains(@class, 'product')]"
-                    )
-                    if imgs:
-                        image_src = imgs[0].get_attribute("src")
-
-                # Fix protocol
-                if image_src and image_src.startswith("//"):
-                    image_src = "https:" + image_src
-
-            except Exception as e:
-                logger.debug(f"Image extraction error: {e}")
-
-            # Extract name
-            name = group_name
-            try:
-                h1s = self.driver.find_elements(By.TAG_NAME, "h1")
-                if h1s:
-                    name = h1s[0].text.strip()
-
-                # Fallback to title
-                if not name or name == group_name:
-                    name = self.driver.title.split('|')[0].strip()
-            except Exception as e:
-                logger.debug(f"Name extraction error: {e}")
-
-            # Quality check: Need at least name and one other field
-            if name and (color != "Unknown" or image_src):
-                return {
-                    "name": name,
-                    "color": color,
-                    "link": url,
-                    "image": image_src,
-                    "group": group_name
-                }
-
-            logger.debug("Insufficient data extracted")
-            return None
-
-        except Exception as e:
-            logger.error(f"Product detail extraction error: {e}")
-            return None
-
-    def run_check(self, bag_config):
-        """Run check across all configured bags"""
+    def run_check(self, bag_config: Dict) -> Tuple[List[Dict], bool]:
+        """Main entry point to check all groups."""
         found_items = []
         was_blocked = False
 
+        if not self.driver:
+            self._initialize_driver()
+
         try:
-            # Ensure driver is initialized
-            if self.driver is None:
-                self._initialize_driver()
+            # Get active groups
+            groups = [(k, v) for k, v in bag_config.items() if v.get('active', True)]
+            random.shuffle(groups)
 
-            active_groups = [(name, data) for name, data in bag_config.items()
-                           if data.get('active', True)]
-
-            if not active_groups:
-                logger.info("No active groups to check")
-                return found_items, was_blocked
-
-            logger.info(f"Checking {len(active_groups)} active groups")
-
-            # Shuffle groups to vary order
-            random.shuffle(active_groups)
-
-            for group_name, data in active_groups:
+            for group_name, data in groups:
                 urls = data.get('urls', [])
-                if not urls:
-                    continue
+                random.shuffle(urls)
 
-                # Shuffle URLs within group
-                urls_copy = urls.copy()
-                random.shuffle(urls_copy)
-
-                for url in urls_copy:
-                    result, blocked = self.check_single_url(url, group_name)
+                for url in urls:
+                    details, blocked = self.check_single_url(url, group_name)
 
                     if blocked:
-                        was_blocked = True
-                        logger.warning("Blocking detected, stopping check cycle")
-                        return found_items, was_blocked
+                        return found_items, True # Stop immediately if blocked
 
-                    if result:
-                        found_items.append(result)
+                    if details:
+                        found_items.append(details)
 
-                    # Random delay between URLs
-                    if urls_copy.index(url) < len(urls_copy) - 1:
-                        delay = random.uniform(3, 8)
-                        logger.debug(f"Waiting {delay:.1f}s before next URL")
-                        time.sleep(delay)
+                    self._human_like_delay(5, 10) # Delay between items
 
-                # Delay between groups
-                if active_groups.index((group_name, data)) < len(active_groups) - 1:
-                    delay = random.uniform(5, 12)
-                    logger.debug(f"Waiting {delay:.1f}s before next group")
-                    time.sleep(delay)
-
-            logger.info(f"Check cycle completed. Found: {len(found_items)}, Blocked: {was_blocked}")
+                self._human_like_delay(10, 20) # Delay between groups
 
         except Exception as e:
-            logger.error(f"Run check error: {e}", exc_info=True)
-            # Try to detect if error was due to blocking
+            logger.error(f"Run loop error: {e}")
+            # If the driver crashed, we might be blocked or just erroring out
             try:
-                if self.driver and self._is_blocked():
+                if self._is_blocked():
                     was_blocked = True
             except:
                 pass
@@ -376,87 +311,70 @@ class BotManager:
         return found_items, was_blocked
 
     def cleanup(self):
-        """Clean up browser resources"""
+        """Quit driver and remove temporary profile folder."""
         if self.driver:
-            profile_path = None
-            # Extract profile path from options before quitting
-            for arg in self.driver.options.arguments:
-                if arg.startswith("user-data-dir="):
-                    profile_path = arg.split("=", 1)[1]
-                    break
-
             try:
-                logger.info("Closing browser")
                 self.driver.quit()
+            except Exception:
+                pass
+            self.driver = None
+
+        # Robust directory removal
+        if self.profile_path and os.path.exists(self.profile_path):
+            try:
+                shutil.rmtree(self.profile_path)
+                logger.info(f"Cleaned up profile: {self.profile_path}")
             except Exception as e:
-                logger.error(f"Error closing browser: {e}")
-            finally:
-                self.driver = None
-
-            # Remove temp profile
-            if profile_path and os.path.exists(profile_path):
-                try:
-                    shutil.rmtree(profile_path)
-                except:
-                    pass
+                logger.error(f"Failed to delete profile {self.profile_path}: {e}")
+        self.profile_path = None
 
 
-def send_html_email(items, recipients):
-    """Send HTML email notification with found items"""
-    if not recipients:
-        logger.warning("No recipients specified for email")
+# -------------------------------------------------------------------------
+# Standalone Functions (Module Level)
+# -------------------------------------------------------------------------
+
+def send_html_email(items: List[Dict], recipients: List[str]):
+    """Send email notification."""
+    if not recipients or not items:
         return
 
-    sender_email = os.environ.get("GMAIL_ADDRESS")
+    sender = os.environ.get("GMAIL_ADDRESS")
     password = os.environ.get("GMAIL_APP_PASSWORD")
 
-    if not sender_email or not password:
-        logger.error("Email credentials not set in environment variables")
+    if not sender or not password:
+        logger.error("Email credentials missing.")
         return
 
     msg = EmailMessage()
-    msg["Subject"] = f"🚨 HERMES ALERT: {len(items)} Items Available!"
-    msg["From"] = sender_email
+    msg["Subject"] = f"🚨 HERMES FOUND: {len(items)} Items!"
+    msg["From"] = sender
     msg["To"] = ", ".join(recipients)
 
-    html_content = """
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
-            🛍️ Hermes Stock Alert
-        </h2>
-        <p style="color: #666; font-size: 14px;">
-            The following items are now available. Act fast!
-        </p>
+    # HTML Body Construction
+    html_body = """
+    <div style='font-family: sans-serif; max-width: 600px; margin: auto;'>
+        <h2 style='border-bottom: 2px solid black;'>🛍️ Stock Alert</h2>
     """
 
     for item in items:
-        html_content += f"""
-        <div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 20px; background-color: #f9f9f9;">
-            {f'<img src="{item.get("image", "")}" style="max-width: 200px; height: auto; display: block; margin-bottom: 10px; border-radius: 4px;">' if item.get('image') else ''}
-            <h3 style="margin: 0 0 10px 0; color: #000;">{item['name']}</h3>
-            <p style="margin: 5px 0; color: #666;"><strong>Color:</strong> {item['color']}</p>
-            <p style="margin: 5px 0; color: #666;"><strong>Group:</strong> {item['group']}</p>
-            <a href="{item['link']}" style="display: inline-block; background-color: #000; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 10px; font-weight: bold;">
-                BUY NOW →
-            </a>
+        html_body += f"""
+        <div style='border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px;'>
+            <h3>{item['name']}</h3>
+            <p><strong>Color:</strong> {item['color']}</p>
+            <p><a href="{item['link']}" style='background: black; color: white; padding: 10px; text-decoration: none; display: inline-block; border-radius: 4px;'>BUY NOW</a></p>
+            {f'<img src="{item["image"]}" width="150"><br>' if item["image"] else ''}
         </div>
         """
 
-    html_content += """
-        <p style="color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #ddd; padding-top: 15px;">
-            This is an automated notification from your Hermes monitoring bot.
-        </p>
-    </div>
-    """
-
-    msg.set_content("Please enable HTML emails to view this message properly.")
-    msg.add_alternative(html_content, subtype='html')
+    html_body += "</div>"
+    msg.set_content("Enable HTML to view items.")
+    msg.add_alternative(html_body, subtype='html')
 
     try:
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
             server.starttls()
-            server.login(sender_email, password)
+            server.login(sender, password)
             server.send_message(msg)
-            logger.info(f"Email sent successfully to {len(recipients)} recipients")
+        logger.info(f"Email sent to {len(recipients)} recipients.")
     except Exception as e:
-        logger.error(f"Email send error: {e}")
+        logger.error(f"Email failed: {e}")
