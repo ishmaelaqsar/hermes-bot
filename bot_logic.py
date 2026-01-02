@@ -86,8 +86,6 @@ class BotManager:
                 "intl.accept_languages": "en-GB,en-US;q=0.9,en;q=0.8",
             }
             options.add_experimental_option("prefs", prefs)
-            options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            options.add_experimental_option('useAutomationExtension', False)
 
             # -------------------------------------------------
             # 4. INITIALIZATION
